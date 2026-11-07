@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="Ripple.Api/Ripple.Api.csproj" />
+  <Project Path="Ripple.App/Ripple.App.csproj">
+    <Deploy Solution="Debug|*" />
+  </Project>
+</Solution>
