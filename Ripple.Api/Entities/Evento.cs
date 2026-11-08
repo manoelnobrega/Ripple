@@ -4,8 +4,10 @@ public class Evento
 {
     public int Id { get; set; }
 
-    /// <summary>"queda", "off" (descartado) ou "test" (teste).</summary>
-    public string Tipo { get; set; } = "test";
+    public int PiscinaId { get; set; }
+    public Piscina Piscina { get; set; } = null!;
 
-    public DateTime Data { get; set; }
+    public TipoEvento Tipo { get; set; }
+    public DateTime DataHora { get; set; } = DateTime.UtcNow;
+    public bool Simulado { get; set; }
 }
