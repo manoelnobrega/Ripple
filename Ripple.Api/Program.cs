@@ -8,52 +8,55 @@ builder.Services.AddDbContext<AppDb>(o => o.UseSqlite("Data Source=ripple.db"));
 
 var app = builder.Build();
 
-// Aplica as migrations ao iniciar (cria o ripple.db e as tabelas se ainda não existirem).
+// Aplica as migrations e cria os dados de exemplo se o banco estiver vazio.
 // Exige que você já tenha rodado Add-Migration Inicial.
 using (var scope = app.Services.CreateScope())
 {
-    scope.ServiceProvider.GetRequiredService<AppDb>().Database.Migrate();
+    var db = scope.ServiceProvider.GetRequiredService<AppDb>();
+    db.Database.Migrate();
+    await DbSeeder.SeedAsync(db);
 }
 
+var fuso = ObterFuso();
 string[] diasSemana = { "Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb" };
 
 // Histórico: GET /api/eventos?periodo=week|month
 app.MapGet("/api/eventos", async (string? periodo, AppDb db) =>
 {
     var semana = periodo != "month";
-    var hoje = DateTime.Now.Date;
-    var inicio = semana ? hoje.AddDays(-6) : hoje.AddDays(-27);
+
+    // Os períodos são contados em horário local (Brasil); o banco guarda UTC.
+    var hojeLocal = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, fuso).Date;
+    var inicioLocal = DateTime.SpecifyKind(
+        semana ? hojeLocal.AddDays(-6) : hojeLocal.AddDays(-27), DateTimeKind.Unspecified);
+    var inicioUtc = TimeZoneInfo.ConvertTimeToUtc(inicioLocal, fuso);
+
+    var piscinaId = await db.Piscinas.OrderBy(p => p.Id).Select(p => p.Id).FirstAsync();
 
     var lista = await db.Eventos
-        .Where(e => e.Data >= inicio)
-        .OrderByDescending(e => e.Data)
+        .Where(e => e.PiscinaId == piscinaId && e.DataHora >= inicioUtc)
+        .OrderByDescending(e => e.DataHora)
         .ToListAsync();
 
     // semana: um balde por dia (7); mês: um balde por bloco de 7 dias (4)
     var baldes = semana ? 7 : 4;
     var values = new int[baldes];
+    var events = new List<EventoDto>();
+
     foreach (var e in lista)
     {
-        var dias = (e.Data.Date - inicio).Days;
+        var local = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(e.DataHora, DateTimeKind.Utc), fuso);
+
+        var dias = (local.Date - inicioLocal).Days;
         var i = semana ? dias : dias / 7;
         if (i >= 0 && i < baldes) values[i]++;
+
+        events.Add(new EventoDto(Titulo(e.Tipo), $"{diasSemana[(int)local.DayOfWeek]}, {local:HH:mm}", ParaJs(e.Tipo)));
     }
 
     var labels = semana
-        ? Enumerable.Range(0, 7).Select(d => diasSemana[(int)inicio.AddDays(d).DayOfWeek]).ToArray()
+        ? Enumerable.Range(0, 7).Select(d => diasSemana[(int)inicioLocal.AddDays(d).DayOfWeek]).ToArray()
         : new[] { "Sem 1", "Sem 2", "Sem 3", "Sem 4" };
-
-    var events = lista.Select(e => new
-    {
-        titulo = e.Tipo switch
-        {
-            "queda" => "Queda detectada",
-            "off" => "Ondulação leve descartada",
-            _ => "Teste de alerta"
-        },
-        quando = $"{diasSemana[(int)e.Data.DayOfWeek]}, {e.Data:HH:mm}",
-        tipo = e.Tipo
-    }).ToList();
 
     return Results.Ok(new { labels, values, events });
 });
@@ -61,15 +64,60 @@ app.MapGet("/api/eventos", async (string? periodo, AppDb db) =>
 // Registrar evento: POST /api/eventos  com { "tipo": "queda" }
 app.MapPost("/api/eventos", async (NovoEvento dto, AppDb db) =>
 {
-    var tipo = dto.Tipo?.ToLowerInvariant();
-    if (tipo is not ("queda" or "off" or "test"))
+    TipoEvento? tipo = dto.Tipo?.ToLowerInvariant() switch
+    {
+        "queda" => TipoEvento.Queda,
+        "off" or "descartado" => TipoEvento.Descartado,
+        "test" or "teste" => TipoEvento.Teste,
+        _ => null
+    };
+
+    if (tipo is null)
         return Results.BadRequest(new { erro = "tipo inválido" });
 
-    db.Eventos.Add(new Evento { Tipo = tipo, Data = DateTime.Now });
+    var piscinaId = await db.Piscinas.OrderBy(p => p.Id).Select(p => p.Id).FirstAsync();
+
+    db.Eventos.Add(new Evento
+    {
+        PiscinaId = piscinaId,
+        Tipo = tipo.Value,
+        DataHora = DateTime.UtcNow,
+        // Até existir o sensor real, tudo que chega por aqui é simulação.
+        Simulado = dto.Simulado ?? true
+    });
     await db.SaveChangesAsync();
+
     return Results.Created("/api/eventos", new { ok = true });
 });
 
 app.Run();
 
-record NovoEvento(string Tipo);
+// ---------- funções auxiliares ----------
+
+static TimeZoneInfo ObterFuso()
+{
+    foreach (var id in new[] { "America/Sao_Paulo", "E. South America Standard Time" })
+    {
+        try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
+        catch (TimeZoneNotFoundException) { }
+    }
+    return TimeZoneInfo.Local;
+}
+
+// Tradução entre o enum e o texto que o index.html espera ("queda", "off", "test").
+static string ParaJs(TipoEvento t) => t switch
+{
+    TipoEvento.Queda => "queda",
+    TipoEvento.Descartado => "off",
+    _ => "test"
+};
+
+static string Titulo(TipoEvento t) => t switch
+{
+    TipoEvento.Queda => "Queda detectada",
+    TipoEvento.Descartado => "Ondulação leve descartada",
+    _ => "Teste de alerta"
+};
+
+record NovoEvento(string Tipo, bool? Simulado);
+record EventoDto(string Titulo, string Quando, string Tipo);
