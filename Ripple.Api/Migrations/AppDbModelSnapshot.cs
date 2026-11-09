@@ -23,16 +23,109 @@ namespace Ripple.Api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
-                    b.Property<DateTime>("Data")
+                    b.Property<DateTime>("DataHora")
                         .HasColumnType("TEXT");
+
+                    b.Property<int>("PiscinaId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("Simulado")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Tipo")
                         .IsRequired()
+                        .HasMaxLength(20)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
+                    b.HasIndex("PiscinaId", "DataHora");
+
                     b.ToTable("Eventos");
+                });
+
+            modelBuilder.Entity("Ripple.Api.Entities.Piscina", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CriadaEm")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Nome")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Piscinas");
+                });
+
+            modelBuilder.Entity("Ripple.Api.Entities.Responsavel", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CriadoEm")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Nome")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("NotificacaoAtiva")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("PiscinaId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("TokenAtualizadoEm")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TokenPush")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PiscinaId");
+
+                    b.HasIndex("TokenPush")
+                        .IsUnique();
+
+                    b.ToTable("Responsaveis");
+                });
+
+            modelBuilder.Entity("Ripple.Api.Entities.Evento", b =>
+                {
+                    b.HasOne("Ripple.Api.Entities.Piscina", "Piscina")
+                        .WithMany("Eventos")
+                        .HasForeignKey("PiscinaId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Piscina");
+                });
+
+            modelBuilder.Entity("Ripple.Api.Entities.Responsavel", b =>
+                {
+                    b.HasOne("Ripple.Api.Entities.Piscina", "Piscina")
+                        .WithMany("Responsaveis")
+                        .HasForeignKey("PiscinaId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Piscina");
+                });
+
+            modelBuilder.Entity("Ripple.Api.Entities.Piscina", b =>
+                {
+                    b.Navigation("Eventos");
+
+                    b.Navigation("Responsaveis");
                 });
 #pragma warning restore 612, 618
         }
