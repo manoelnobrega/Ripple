@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Ripple.Api.Data;
+using Ripple.Api.Dtos;
 using Ripple.Api.Entities;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -41,7 +42,7 @@ app.MapGet("/api/eventos", async (string? periodo, AppDb db) =>
     // semana: um balde por dia (7); mês: um balde por bloco de 7 dias (4)
     var baldes = semana ? 7 : 4;
     var values = new int[baldes];
-    var events = new List<EventoDto>();
+    var events = new List<EventoResponse>();
 
     foreach (var e in lista)
     {
@@ -51,18 +52,18 @@ app.MapGet("/api/eventos", async (string? periodo, AppDb db) =>
         var i = semana ? dias : dias / 7;
         if (i >= 0 && i < baldes) values[i]++;
 
-        events.Add(new EventoDto(Titulo(e.Tipo), $"{diasSemana[(int)local.DayOfWeek]}, {local:HH:mm}", ParaJs(e.Tipo)));
+        events.Add(new EventoResponse(Titulo(e.Tipo), $"{diasSemana[(int)local.DayOfWeek]}, {local:HH:mm}", ParaJs(e.Tipo)));
     }
 
     var labels = semana
         ? Enumerable.Range(0, 7).Select(d => diasSemana[(int)inicioLocal.AddDays(d).DayOfWeek]).ToArray()
         : new[] { "Sem 1", "Sem 2", "Sem 3", "Sem 4" };
 
-    return Results.Ok(new { labels, values, events });
+    return Results.Ok(new HistoricoResponse(labels, values, events));
 });
 
 // Registrar evento: POST /api/eventos  com { "tipo": "queda" }
-app.MapPost("/api/eventos", async (NovoEvento dto, AppDb db) =>
+app.MapPost("/api/eventos", async (NovoEventoRequest dto, AppDb db) =>
 {
     TipoEvento? tipo = dto.Tipo?.ToLowerInvariant() switch
     {
@@ -118,6 +119,3 @@ static string Titulo(TipoEvento t) => t switch
     TipoEvento.Descartado => "Ondulação leve descartada",
     _ => "Teste de alerta"
 };
-
-record NovoEvento(string Tipo, bool? Simulado);
-record EventoDto(string Titulo, string Quando, string Tipo);
