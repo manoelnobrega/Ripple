@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="Ripple.Api.Tests/Ripple.Api.Tests.csproj" Id="f8b6f648-95d1-4c04-a847-913c508a3b02" />
   <Project Path="Ripple.Api/Ripple.Api.csproj" />
   <Project Path="Ripple.App/Ripple.App.csproj">
     <Deploy Solution="Debug|*" />
