@@ -11,11 +11,13 @@ public class EventoService : IEventoService
 
     private readonly AppDb _db;
     private readonly TimeProvider _relogio;
+    private readonly INotificacaoService _notificacao;
 
-    public EventoService(AppDb db, TimeProvider relogio)
+    public EventoService(AppDb db, TimeProvider relogio, INotificacaoService notificacao)
     {
         _db = db;
         _relogio = relogio;
+        _notificacao = notificacao;
     }
 
     public async Task<Evento> RegistrarAsync(NovoEventoRequest req)
@@ -34,6 +36,11 @@ public class EventoService : IEventoService
 
         _db.Eventos.Add(evento);
         await _db.SaveChangesAsync();
+
+        // O evento já está gravado; o aviso é feito depois e nunca derruba o registro.
+        if (evento.Tipo == TipoEvento.Queda)
+            await _notificacao.NotificarQuedaAsync(evento);
+
         return evento;
     }
 
