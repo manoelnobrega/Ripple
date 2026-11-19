@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Plugin.FirebasePushNotifications;
 using Ripple.App.Services;
 
 namespace Ripple.App;
@@ -10,6 +11,14 @@ public static class MauiProgram
         var builder = MauiApp.CreateBuilder();
         builder
             .UseMauiApp<App>()
+            .UseFirebasePushNotifications(o =>
+            {
+#if ANDROID
+                // Avisos de queda aparecem como pop-up (heads-up), não só como ícone na barra.
+                // A importância do canal só vale na criação: se mudar depois, desinstale o app.
+                o.Android.DefaultNotificationImportance = Android.App.NotificationImportance.High;
+#endif
+            })
             .ConfigureFonts(fonts =>
             {
                 fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
@@ -19,6 +28,7 @@ public static class MauiProgram
         // Serviços usados pela página
         builder.Services.AddSingleton<ApiClient>();
         builder.Services.AddSingleton<RippleBridge>();
+        builder.Services.AddSingleton<PushService>();
         builder.Services.AddTransient<MainPage>();
 
 #if DEBUG
