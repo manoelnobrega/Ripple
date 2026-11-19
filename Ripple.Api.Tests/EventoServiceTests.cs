@@ -1,6 +1,4 @@
-﻿using Microsoft.Data.Sqlite;
-using Microsoft.EntityFrameworkCore;
-using Ripple.Api;
+﻿using Microsoft.EntityFrameworkCore;
 using Ripple.Api.Data;
 using Ripple.Api.Dtos;
 using Ripple.Api.Entities;
@@ -9,42 +7,24 @@ using Xunit;
 
 namespace Ripple.Api.Tests;
 
-// Relógio fixo em UTC: quinta-feira, 12/11/2026, 15:00.
-file class RelogioFixo : TimeProvider
-{
-    private readonly DateTimeOffset _agora;
-    public RelogioFixo(DateTime utc) => _agora = new DateTimeOffset(utc, TimeSpan.Zero);
-    public override DateTimeOffset GetUtcNow() => _agora;
-    public override TimeZoneInfo LocalTimeZone => TimeZoneInfo.Utc;
-}
-
 public class EventoServiceTests : IDisposable
 {
     private static readonly DateTime Agora = new(2026, 11, 12, 15, 0, 0, DateTimeKind.Utc);
 
-    private readonly SqliteConnection _conexao;
+    private readonly BancoDeTeste _banco = new();
+    private readonly NotificacaoFalsa _notificacao = new();
     private readonly AppDb _db;
     private readonly EventoService _servico;
 
     public EventoServiceTests()
     {
-        // Banco SQLite em memória: vive enquanto a conexão estiver aberta.
-        _conexao = new SqliteConnection("Data Source=:memory:");
-        _conexao.Open();
-
-        var opcoes = new DbContextOptionsBuilder<AppDb>().UseSqlite(_conexao).Options;
-        _db = new AppDb(opcoes);
-        _db.Database.EnsureCreated();
-        _db.Piscinas.Add(new Piscina { Nome = "Piscina de teste" });
-        _db.SaveChanges();
-
-        _servico = new EventoService(_db, new RelogioFixo(Agora));
+        _db = _banco.Db;
+        _servico = new EventoService(_db, new RelogioFixo(Agora), _notificacao);
     }
 
     public void Dispose()
     {
-        _db.Dispose();
-        _conexao.Dispose();
+        _banco.Dispose();
     }
 
     private void Adicionar(TipoEvento tipo, DateTime utc)
@@ -99,6 +79,34 @@ public class EventoServiceTests : IDisposable
             () => _servico.RegistrarAsync(new NovoEventoRequest(texto!, null)));
 
         Assert.Equal(0, await _db.Eventos.CountAsync());
+    }
+
+    [Fact]
+    public async Task Registrar_Queda_NotificaUmaVez()
+    {
+        var evento = await _servico.RegistrarAsync(new NovoEventoRequest("queda", null));
+
+        Assert.Single(_notificacao.Chamadas);
+        Assert.Equal(evento.Id, _notificacao.Chamadas[0].Id);
+    }
+
+    [Theory]
+    [InlineData("test")]
+    [InlineData("off")]
+    public async Task Registrar_NaoQueda_NaoNotifica(string tipo)
+    {
+        await _servico.RegistrarAsync(new NovoEventoRequest(tipo, null));
+
+        Assert.Empty(_notificacao.Chamadas);
+    }
+
+    [Fact]
+    public async Task Registrar_TipoInvalido_NaoNotifica()
+    {
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => _servico.RegistrarAsync(new NovoEventoRequest("xyz", null)));
+
+        Assert.Empty(_notificacao.Chamadas);
     }
 
     // ---------- ObterHistoricoAsync ----------
