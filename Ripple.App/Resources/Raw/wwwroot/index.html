@@ -112,6 +112,15 @@ h2.sec{font-size:18px;margin:18px 0 2px}
 .tab[aria-current="page"]{color:var(--teal);font-weight:600}
 .tab svg{display:block}
 
+.person .info{flex:1;min-width:0}
+.person .n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.person .rm{flex:none;width:44px;height:44px;border:0;background:transparent;color:var(--muted);font-size:22px;border-radius:12px}
+.person .s.wait{color:#9A6B00}
+.pform{margin:12px 0;padding:14px;border:1px solid var(--line);border-radius:16px;background:#fff}
+.pform label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+.pform input{width:100%;min-height:46px;padding:0 12px;border:1.5px solid var(--line);border-radius:12px;font:inherit;font-size:16px}
+.pform .row{display:flex;gap:10px;margin-top:12px}
+.pform .solidtl{background:var(--teal);color:#fff}
 .toast{position:fixed;left:50%;bottom:92px;transform:translateX(-50%);max-width:340px;padding:12px 16px;border-radius:14px;background:var(--ink);color:#fff;font-size:14px;text-align:center;z-index:5}
 
 @media (min-width:600px){
@@ -199,8 +208,15 @@ h2.sec{font-size:18px;margin:18px 0 2px}
     </div>
 
     <h2 class="sec">Quem recebe os alertas</h2>
-    <div class="person"><div class="avatar" aria-hidden="true">1</div><div><div class="n">Responsável 1</div><div class="s">Notificação ativa</div></div></div>
-    <div class="person"><div class="avatar" aria-hidden="true">2</div><div><div class="n">Responsável 2</div><div class="s">Notificação ativa</div></div></div>
+    <div id="people"></div>
+    <form id="person-form" class="pform" hidden>
+      <label for="person-name">Nome do responsável</label>
+      <input id="person-name" type="text" maxlength="80" autocomplete="off" placeholder="Ex.: Mariana">
+      <div class="row">
+        <button class="btn outline" type="button" id="person-cancel">Cancelar</button>
+        <button class="btn outline solidtl" type="submit" id="person-save">Salvar</button>
+      </div>
+    </form>
     <button class="btn outline" type="button" id="add-person">+ Adicionar responsável</button>
 
     <p class="note">Protótipo de interface com dados fictícios. O sensor da boia ainda será desenvolvido.</p>
@@ -250,6 +266,7 @@ h2.sec{font-size:18px;margin:18px 0 2px}
 <script src="_framework/hybridwebview.js"></script>
 <script src="scripts/HybridWebView.js"></script>
 <script>
+// @ts-nocheck  (o Visual Studio trata JavaScript como TypeScript e acusa falsos erros de tipo)
 (function () {
   var SCREENS = ['inicio', 'visao-geral', 'historico'];
 
@@ -311,8 +328,60 @@ h2.sec{font-size:18px;margin:18px 0 2px}
     toastTimer = setTimeout(function () { toast.hidden = true; }, ms || 2200);
   }
   function msgErro(e) { return (e && e.message) ? e.message : String(e); }
-  document.getElementById('add-person').addEventListener('click', function () {
-    showToast('Função ainda não disponível neste protótipo.');
+  /* Responsáveis (API: /api/responsaveis, via RippleBridge) */
+  var people = document.getElementById('people');
+  var pForm = document.getElementById('person-form');
+  var pName = document.getElementById('person-name');
+  var addBtn = document.getElementById('add-person');
+
+  function personHtml(r, i) {
+    var estado = r.temToken
+      ? '<div class="s">Notificação ativa</div>'
+      : '<div class="s wait">Sem aparelho conectado</div>';
+    return '<div class="person"><div class="avatar" aria-hidden="true">' + (i + 1) + '</div>' +
+      '<div class="info"><div class="n">' + esc(r.nome) + '</div>' + estado + '</div>' +
+      '<button class="rm" type="button" data-rm="' + r.id + '" aria-label="Remover ' + esc(r.nome) + '">&times;</button></div>';
+  }
+  function renderPeople() {
+    return chamar('ListarResponsaveis').then(function (d) {
+      if (d.erro) throw new Error(d.erro);
+      people.innerHTML = d.length ? d.map(personHtml).join('')
+        : '<p class="note">Nenhum responsável cadastrado.</p>';
+    }).catch(function (e) {
+      showToast('Erro ao carregar responsáveis: ' + msgErro(e), 9000);
+    });
+  }
+  function abrirForm(abrir) {
+    pForm.hidden = !abrir;
+    addBtn.hidden = abrir;
+    if (abrir) { pName.value = ''; pName.focus(); }
+  }
+  addBtn.addEventListener('click', function () { abrirForm(true); });
+  document.getElementById('person-cancel').addEventListener('click', function () { abrirForm(false); });
+  pForm.addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var nome = pName.value.trim();
+    if (!nome) { showToast('Digite o nome do responsável.'); return; }
+    var salvar = document.getElementById('person-save');
+    salvar.disabled = true;
+    chamar('AdicionarResponsavel', [nome]).then(function (d) {
+      if (d.erro) throw new Error(d.erro);
+      abrirForm(false);
+      showToast('Responsável adicionado.');
+      return renderPeople();
+    }).catch(function (e) {
+      showToast(msgErro(e), 6000);
+    }).then(function () { salvar.disabled = false; });
+  });
+  people.addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-rm]');
+    if (!b) return;
+    chamar('RemoverResponsavel', [parseInt(b.getAttribute('data-rm'), 10)]).then(function (d) {
+      if (d.erro) throw new Error(d.erro);
+      return renderPeople();
+    }).catch(function (e) {
+      showToast('Erro ao remover: ' + msgErro(e), 6000);
+    });
   });
 
   /* Histórico (dados vêm da API, via RippleBridge.ObterHistorico) */
@@ -376,6 +445,7 @@ h2.sec{font-size:18px;margin:18px 0 2px}
     b.addEventListener('click', function () { renderPeriod(b.getAttribute('data-period')); });
   });
   renderPeriod('week');
+  renderPeople();
 })();
 </script>
 </body>

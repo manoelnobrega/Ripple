@@ -66,10 +66,6 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <Folder Include="Resources\raw\wwwroot\" />
-	</ItemGroup>
-
-	<ItemGroup>
 	  <MauiAsset Include="Resources\AppIcon\icon-512.png" />
 	</ItemGroup>
 

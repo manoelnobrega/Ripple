@@ -69,4 +69,32 @@ public class ApiClient
         resposta.EnsureSuccessStatusCode();
         return true;
     }
+
+    /// <summary>GET /api/responsaveis. Devolve o JSON bruto (lista).</summary>
+    public Task<string> ListarResponsaveisAsync() => _http.GetStringAsync("/api/responsaveis");
+
+    /// <summary>POST /api/responsaveis só com o nome (sem aparelho). Se a API recusar, lança com a mensagem dela.</summary>
+    public async Task AdicionarResponsavelAsync(string nome)
+    {
+        var json = $"{{\"nome\":{JsonSerializer.Serialize(nome)}}}";
+        using var conteudo = new StringContent(json, Encoding.UTF8, "application/json");
+        using var resposta = await _http.PostAsync("/api/responsaveis", conteudo);
+
+        if (resposta.StatusCode == HttpStatusCode.BadRequest)
+        {
+            // A API devolve { "erro": "..." } (nome vazio, limite de 5, etc.).
+            using var doc = JsonDocument.Parse(await resposta.Content.ReadAsStringAsync());
+            var msg = doc.RootElement.TryGetProperty("erro", out var e) ? e.GetString() : null;
+            throw new InvalidOperationException(msg ?? "Dados inválidos.");
+        }
+        resposta.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>DELETE /api/responsaveis/{id}. Se já não existe, considera removido.</summary>
+    public async Task RemoverResponsavelAsync(int id)
+    {
+        using var resposta = await _http.DeleteAsync($"/api/responsaveis/{id}");
+        if (resposta.StatusCode == HttpStatusCode.NotFound) return;
+        resposta.EnsureSuccessStatusCode();
+    }
 }

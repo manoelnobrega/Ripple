@@ -40,6 +40,32 @@ public class RippleBridge
         }
     }
 
+    public async Task<string> ListarResponsaveis()
+    {
+        try { return await _api.ListarResponsaveisAsync(); }
+        catch (Exception ex) { return Erro(ex); }
+    }
+
+    public async Task<string> AdicionarResponsavel(string nome)
+    {
+        try
+        {
+            await _api.AdicionarResponsavelAsync(nome);
+            return "{\"ok\":true}";
+        }
+        catch (Exception ex) { return Erro(ex); }
+    }
+
+    public async Task<string> RemoverResponsavel(int id)
+    {
+        try
+        {
+            await _api.RemoverResponsavelAsync(id);
+            return "{\"ok\":true}";
+        }
+        catch (Exception ex) { return Erro(ex); }
+    }
+
     private static string Erro(Exception ex) =>
         $"{{\"erro\":{JsonSerializer.Serialize(ex.Message)}}}";
 }
