@@ -59,6 +59,10 @@ h1.title{font-size:28px}
 .tile .k{font-size:12px;font-weight:500;color:var(--muted)}
 .tile .v{margin-top:4px;font-size:17px;font-weight:600;display:flex;align-items:center;gap:8px}
 .dot{width:10px;height:10px;border-radius:50%;background:var(--aqua)}
+.dot.off{background:#9AA9AB}
+#connect{margin-top:14px}
+.btn.outline.on{background:var(--teal);color:#fff}
+.btn:disabled{opacity:.6}
 
 h2.sec{font-size:18px;margin:18px 0 2px}
 .ev{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
@@ -154,8 +158,8 @@ h2.sec{font-size:18px;margin:18px 0 2px}
         <circle cx="80" cy="80" r="22" fill="#0E6E7E"/>
         <path d="M71 80l6 6 12-13" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
-      <h1>Piscina segura</h1>
-      <p>Nenhuma queda detectada. A boia está monitorando agora.</p>
+      <h1 id="ok-titulo">Sem conexão com a boia</h1>
+      <p id="ok-texto">Conecte com a boia para monitorar a piscina.</p>
     </section>
 
     <section class="hero alert" id="alert-card" role="alert" hidden>
@@ -176,11 +180,11 @@ h2.sec{font-size:18px;margin:18px 0 2px}
     </section>
 
     <div class="pair">
-      <div class="tile"><div class="k">Boia</div><div class="v"><span class="dot"></span>Online</div></div>
+      <div class="tile"><div class="k">Boia</div><div class="v"><span class="dot off" id="boia-dot"></span><span id="boia-status">Offline</span></div></div>
       <div class="tile"><div class="k">Bateria</div><div class="v">82%</div></div>
     </div>
 
-    <button class="btn sim" id="simulate" type="button">Simular alerta (demonstração)</button>
+    <button class="btn outline" id="connect" type="button">Conectar com a boia</button>
 
     <h2 class="sec">Últimos eventos</h2>
     <div id="home-events"></div>
@@ -295,7 +299,7 @@ h2.sec{font-size:18px;margin:18px 0 2px}
   /* Alerta simulado */
   var okCard = document.getElementById('ok-card');
   var alertCard = document.getElementById('alert-card');
-  var simBtn = document.getElementById('simulate');
+  var simBtn = document.getElementById('connect');
   function setAlert(on) {
     okCard.hidden = on;
     alertCard.hidden = !on;
@@ -304,18 +308,44 @@ h2.sec{font-size:18px;margin:18px 0 2px}
       try { if (navigator.vibrate) navigator.vibrate([300, 120, 300, 120, 300]); } catch (e) {}
     }
   }
+  /* Conexão com a boia (BLE): o estado vem do C# em mensagens {tipo:"conexao", estado:...} */
+  var estadoBoia = 'desconectada';
+  var TEXTOS = {
+    desconectada: ['Conectar com a boia', 'Offline'],
+    procurando:   ['Procurando a boia... (toque para cancelar)', 'Procurando...'],
+    conectando:   ['Conectando...', 'Conectando...'],
+    conectada:    ['Desconectar da boia', 'Online']
+  };
+  function aplicarEstado(estado) {
+    var anterior = estadoBoia;
+    estadoBoia = TEXTOS[estado] ? estado : 'desconectada';
+    var t = TEXTOS[estadoBoia];
+    var on = estadoBoia === 'conectada';
+    simBtn.textContent = t[0];
+    simBtn.classList.toggle('on', on);
+    document.getElementById('boia-status').textContent = t[1];
+    document.getElementById('boia-dot').classList.toggle('off', !on);
+    document.getElementById('ok-titulo').textContent = on ? 'Piscina segura' : 'Sem conexão com a boia';
+    document.getElementById('ok-texto').textContent = on
+      ? 'Nenhuma queda detectada. A boia está monitorando agora.'
+      : 'Conecte com a boia para monitorar a piscina.';
+    if (anterior === 'conectada' && !on) showToast('Conexão com a boia perdida. Procurando...', 4000);
+  }
   simBtn.addEventListener('click', function () {
-    setAlert(true);
-    /* Registra a queda simulada no servidor */
-    chamar('RegistrarQueda').then(function (d) {
-      if (d.erro) throw new Error(d.erro);
-      renderPeriod(currentPeriod); /* atualiza histórico e lista da tela inicial */
+    var metodo = estadoBoia === 'desconectada' ? 'ConectarBoia' : 'DesconectarBoia';
+    simBtn.disabled = true;
+    chamar(metodo).then(function (d) {
+      if (d && d.erro) showToast(d.erro, 6000);
     }).catch(function (e) {
-      showToast('Erro ao registrar: ' + msgErro(e), 9000);
-    });
+      showToast('Erro: ' + msgErro(e), 9000);
+    }).then(function () { simBtn.disabled = false; });
   });
   Array.prototype.forEach.call(document.querySelectorAll('[data-clear-alert]'), function (b) {
-    b.addEventListener('click', function () { setAlert(false); });
+    b.addEventListener('click', function () {
+      setAlert(false);
+      /* A boia continua em alerta (pop-ups) até receber "rearm". */
+      chamar('RearmarBoia').catch(function () {});
+    });
   });
 
   /* Aviso de função não implementada */
@@ -445,6 +475,29 @@ h2.sec{font-size:18px;margin:18px 0 2px}
     b.addEventListener('click', function () { renderPeriod(b.getAttribute('data-period')); });
   });
   renderPeriod('week');
+
+  /* Mensagens da boia (C# -> JS), enviadas por RippleBleService via SendRawMessage */
+  window.addEventListener('HybridWebViewMessageReceived', function (e) {
+    var m;
+    try { m = JSON.parse(e.detail.message); } catch (_) { return; }
+    if (m.tipo === 'queda' || m.tipo === 'teste') {
+      setAlert(true);
+      setTimeout(function () { renderPeriod(currentPeriod); }, 1500); /* dá tempo da API gravar */
+    } else if (m.tipo === 'normal') {
+      setAlert(false);
+    } else if (m.tipo === 'conexao') {
+      aplicarEstado(m.estado);
+      if (m.estado === 'conectada') showToast('Boia conectada.', 3000);
+    } else if (m.tipo === 'bateria_critica') {
+      showToast('Bateria da boia crítica: ela vai desligar.', 9000);
+    } else if (m.tipo === 'erro_api') {
+      showToast('Queda detectada, mas não consegui avisar o servidor.', 9000);
+    }
+  });
+
+  /* Estado inicial (a tela pode ser recarregada com a boia já conectada) */
+  aplicarEstado('desconectada');
+  chamar('EstadoBoia').then(function (d) { if (d && d.estado) aplicarEstado(d.estado); }).catch(function () {});
   renderPeople();
 })();
 </script>

@@ -27,6 +27,7 @@ public static class MauiProgram
 
         // Serviços usados pela página
         builder.Services.AddSingleton<ApiClient>();
+        builder.Services.AddSingleton<RippleBleService>();
         builder.Services.AddSingleton<RippleBridge>();
         builder.Services.AddSingleton<PushService>();
         builder.Services.AddTransient<MainPage>();

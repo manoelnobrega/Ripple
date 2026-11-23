@@ -36,11 +36,11 @@ public class ApiClient
     public Task<string> ObterHistoricoAsync(string periodo) =>
         _http.GetStringAsync($"/api/eventos?periodo={Uri.EscapeDataString(periodo)}");
 
-    /// <summary>POST /api/eventos com { "tipo": "..." }.</summary>
-    public async Task RegistrarEventoAsync(string tipo)
+    /// <summary>POST /api/eventos com { "tipo": "...", "simulado": true|false }.</summary>
+    public async Task RegistrarEventoAsync(string tipo, bool simulado = true)
     {
-        // Serializa só strings, o que evita problemas com trimming no Android em Release.
-        var json = $"{{\"tipo\":{JsonSerializer.Serialize(tipo)}}}";
+        // A API assume simulado=true quando o campo não vem; evento vindo da boia real manda false.
+        var json = $"{{\"tipo\":{JsonSerializer.Serialize(tipo)},\"simulado\":{(simulado ? "true" : "false")}}}";
         using var conteudo = new StringContent(json, Encoding.UTF8, "application/json");
         using var resposta = await _http.PostAsync("/api/eventos", conteudo);
         resposta.EnsureSuccessStatusCode();
